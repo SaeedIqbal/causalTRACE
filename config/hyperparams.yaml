@@ -1,0 +1,14 @@
+model:
+  emb_dim: 64
+  energy_depth: 3
+  S: 10
+  K: 128
+  sigma: 1.0
+  epsilon: 0.5
+  lr: 0.01
+
+training:
+  epochs: 50
+  batch_size: 1024
+  optimizer: Adam
+  lr: 0.001
