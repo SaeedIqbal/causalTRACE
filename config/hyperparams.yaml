@@ -1,14 +1,321 @@
-model:
-  emb_dim: 64
-  energy_depth: 3
-  S: 10
-  K: 128
-  sigma: 1.0
-  epsilon: 0.5
-  lr: 0.01
+# =============================================================================
+# GLOBAL EXPERIMENT CONFIGURATION
+# =============================================================================
+experiment:
+  name: "causaltrace_ablation_study"
+  seed: 42
+  device: "cuda" if torch.cuda.is_available() else "cpu"
+  output_dir: "results"
+  save_checkpoints: true
+  save_predictions: true
+  log_level: "INFO"
 
-training:
-  epochs: 50
-  batch_size: 1024
-  optimizer: Adam
-  lr: 0.001
+# =============================================================================
+# DATASET CONFIGURATION
+# =============================================================================
+datasets:
+  # Global defaults for all datasets
+  defaults:
+    temporal: true
+    num_snapshots: 10
+    inject_anomalies: true
+    anomaly_ratio: 0.05
+    train_split: 0.7
+    val_split: 0.1
+    test_split: 0.2
+    batch_size: 1024
+    num_workers: 4
+
+  # Dataset-specific overrides
+  Weibo:
+    num_snapshots: 10
+    anomaly_ratio: 0.03
+    batch_size: 2048
+
+  Facebook:
+    num_snapshots: 8
+    anomaly_ratio: 0.02
+    batch_size: 512
+
+  Disney:
+    num_snapshots: 6
+    anomaly_ratio: 0.04
+    batch_size: 256
+
+  Books:
+    num_snapshots: 6
+    anomaly_ratio: 0.04
+    batch_size: 256
+
+  Flickr:
+    num_snapshots: 12
+    anomaly_ratio: 0.06
+    batch_size: 4096
+
+  DGraph:
+    num_snapshots: 24
+    anomaly_ratio: 0.08
+    batch_size: 8192
+    temporal: true  # Uses real timestamps
+
+# =============================================================================
+# MODEL CONFIGURATION
+# =============================================================================
+models:
+  # =============================================================================
+  # CAUSALTRACE - PROPOSED METHOD (Section 5)
+  # =============================================================================
+  CausalTRACE:
+    # Embedding Updater (Section 5.3)
+    embedding_updater:
+      input_dim: 16      # Will be overridden by dataset
+      emb_dim: 64
+      hidden_dim: 128
+      num_layers: 2
+      mc_samples: 10     # S in Eq. 5.3
+      learning_rate: 0.01
+      momentum: 0.9
+      min_uncertainty: 1e-6
+
+    # Causal Energy Model (Section 5.2)
+    causal_energy:
+      emb_dim: 64
+      hidden_dim: 128
+      depth: 3           # Energy MLP depth
+      temporal_bandwidth: 1.0  # σ in Eq. 5.2
+      sparsity_threshold: 0.1  # τ in Eq. 5.2
+      temperature: 1.0
+      contrastive_steps: 5
+      step_size: 0.1
+
+    # Memory Bank (Section 5.3)
+    memory_bank:
+      K: 128             # Number of prototypes
+      learning_rate: 0.01
+      covariance_regularization: 1e-6
+      min_cluster_weight: 1e-8
+      max_distance_threshold: 10.0
+
+    # Anomaly Scorer (Section 5.4)
+    anomaly_scorer:
+      kl_threshold: 0.5  # ε in Eq. 5.4
+      min_variance: 1e-6
+      calibration_alpha: 0.05
+
+    # Training Configuration
+    training:
+      epochs: 50
+      optimizer: "Adam"
+      learning_rate: 0.001
+      weight_decay: 1e-5
+      gradient_clip: 1.0
+      eval_every: 5
+
+  # =============================================================================
+  # SOTA BASELINES
+  # =============================================================================
+  MEGAD:
+    embedding_dim: 64
+    hidden_dim: 128
+    num_layers: 2
+    sampling_size: 1024
+    reconstruction_weight: 1.0
+    distribution_weight: 0.5
+    pretrain_epochs: 20
+    training:
+      epochs: 50
+      optimizer: "Adam"
+      learning_rate: 0.001
+      weight_decay: 1e-5
+
+  DOMINANT:
+    embedding_dim: 64
+    hidden_dim: 128
+    num_layers: 2
+    alpha: 0.7
+    training:
+      epochs: 100
+      optimizer: "Adam"
+      learning_rate: 0.001
+      weight_decay: 1e-5
+
+  AnomalyDAE:
+    encoder_dim: 64
+    decoder_dim: 64
+    hidden_dim: 128
+    num_layers: 2
+    alpha: 0.5
+    beta: 0.5
+    training:
+      epochs: 100
+      optimizer: "Adam"
+      learning_rate: 0.001
+      weight_decay: 1e-5
+
+  TGN:
+    embedding_dim: 64
+    hidden_dim: 128
+    num_layers: 2
+    memory_dim: 64
+    time_dim: 64
+    n_neighbors: 10
+    n_head: 2
+    dropout: 0.1
+    training:
+      epochs: 50
+      optimizer: "Adam"
+      learning_rate: 0.0001
+      weight_decay: 0
+
+  DySAT:
+    embedding_dim: 64
+    structural_head_config: [8, 8]
+    structural_layer_config: [64, 64]
+    temporal_head_config: [8]
+    temporal_layer_config: [64]
+    positional_embedding_size: 32
+    train_residual: true
+    training:
+      epochs: 100
+      optimizer: "Adam"
+      learning_rate: 0.001
+      weight_decay: 0
+
+  GraphSAINT:
+    embedding_dim: 64
+    hidden_dim: 128
+    num_layers: 2
+    sampler: "node"
+    sample_size: 1024
+    normalization: "sym"
+    training:
+      epochs: 50
+      optimizer: "Adam"
+      learning_rate: 0.01
+      weight_decay: 0
+
+  ClusterGCN:
+    embedding_dim: 64
+    hidden_dim: 128
+    num_layers: 2
+    num_clusters: 50
+    lambda: 1.0
+    training:
+      epochs: 50
+      optimizer: "Adam"
+      learning_rate: 0.01
+      weight_decay: 0
+
+  CausalNID:
+    embedding_dim: 64
+    hidden_dim: 128
+    num_layers: 2
+    causal_depth: 3
+    intervention_strength: 0.1
+    training:
+      epochs: 50
+      optimizer: "Adam"
+      learning_rate: 0.001
+      weight_decay: 1e-5
+
+  CausalSCM:
+    embedding_dim: 64
+    hidden_dim: 128
+    num_layers: 2
+    scm_depth: 3
+    noise_dim: 16
+    training:
+      epochs: 50
+      optimizer: "Adam"
+      learning_rate: 0.001
+      weight_decay: 1e-5
+
+# =============================================================================
+# ABLATION STUDY CONFIGURATION
+# =============================================================================
+ablation:
+  # Energy MLP Depth (Section 5.2)
+  energy_depth:
+    values: [2, 3, 4]
+    default: 3
+
+  # Monte Carlo Samples (Section 5.3)
+  mc_samples:
+    values: [5, 10, 20]
+    default: 10
+
+  # Number of Prototypes (Section 5.3)
+  prototypes_K:
+    values: [64, 128, 256]
+    default: 128
+
+  # Temporal Bandwidth (Section 5.2)
+  temporal_bandwidth:
+    values: [0.5, 1.0, 2.0]
+    default: 1.0
+
+  # KL Threshold (Section 5.4)
+  kl_threshold:
+    values: [0.1, 0.5, 1.0]
+    default: 0.5
+
+  # Learning Rate (Section 5.3)
+  learning_rate:
+    values: [0.001, 0.01, 0.1]
+    default: 0.01
+
+  # Causal Uncertainty Threshold
+  sparsity_threshold:
+    values: [0.05, 0.1, 0.2]
+    default: 0.1
+
+# =============================================================================
+# EVALUATION CONFIGURATION
+# =============================================================================
+evaluation:
+  metrics:
+    - "auc"
+    - "auc_ci"
+    - "causal_fidelity"
+    - "precision_recall_at_k"
+    - "f1_score"
+    - "memory_usage"
+  confidence_level: 0.95
+  bootstrap_samples: 1000
+  precision_recall_ks: [100, 1000]
+  memory_tracking: true
+  save_detailed_results: true
+
+# =============================================================================
+# MEMORY AND SCALABILITY CONFIGURATION
+# =============================================================================
+scalability:
+  # Memory constraints (GB)
+  memory_budget:
+    small: 2.0    # < 10K nodes
+    medium: 4.0   # 10K - 100K nodes  
+    large: 8.0    # 100K - 1M nodes
+    xlarge: 16.0  # > 1M nodes (DGraph)
+
+  # Processing constraints
+  max_batch_size:
+    small: 1024
+    medium: 4096
+    large: 8192
+    xlarge: 16384
+
+  # Timeout constraints (minutes)
+  timeout:
+    small: 10
+    medium: 30
+    large: 60
+    xlarge: 120
+
+# =============================================================================
+# REPRODUCIBILITY CONFIGURATION
+# =============================================================================
+reproducibility:
+  seed: 42
+  deterministic: false  # Set to true for full reproducibility (slower)
+  cudnn_benchmark: true  # Set to false for full reproducibility
+  torch_threads: 4
